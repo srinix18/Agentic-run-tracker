@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model agent {
+  AgentID   BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  name      String  @db.VarChar(200)
+  version   String? @db.VarChar(50)
+  model     String? @db.VarChar(200)
+  goal      String? @db.Text
+  ProjectID BigInt  @db.UnsignedBigInt
+  project   project @relation(fields: [ProjectID], references: [ProjectID], onDelete: Cascade, map: "agent_ibfk_1")
+  run       run[]
+
+  @@index([ProjectID], map: "ProjectID")
+}
+
+model artifact {
+  ArtifactID BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  Type       artifact_Type
+  URI        String        @db.VarChar(1000)
+  Checksum   String?       @db.VarChar(128)
+  Created_at DateTime      @default(now()) @db.Timestamp(0)
+  RunID      BigInt        @db.UnsignedBigInt
+  run        run           @relation(fields: [RunID], references: [RunID], onDelete: Cascade, map: "artifact_ibfk_1")
+
+  @@index([RunID], map: "RunID")
+}
+
+model dataset {
+  DatasetID BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  name      String       @db.VarChar(200)
+  version   String?      @db.VarChar(50)
+  URL       String       @db.VarChar(1000)
+  type      dataset_type
+  ProjectID BigInt       @db.UnsignedBigInt
+  project   project      @relation(fields: [ProjectID], references: [ProjectID], onDelete: Cascade, map: "dataset_ibfk_1")
+
+  @@unique([ProjectID, name], map: "uq_dataset_project_name")
+}
+
+model environment {
+  EnvironmentID  BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  Name           String  @db.VarChar(200)
+  Framework      String? @db.VarChar(100)
+  Python_Version String? @db.VarChar(50)
+  GPU_Cores      Int?    @db.UnsignedInt
+  CPU_Cores      Int?    @db.UnsignedInt
+  RunID          BigInt  @db.UnsignedBigInt
+  run            run     @relation(fields: [RunID], references: [RunID], onDelete: Cascade, map: "environment_ibfk_1")
+
+  @@index([RunID], map: "RunID")
+}
+
+model project {
+  ProjectID  BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  name       String         @db.VarChar(200)
+  status     project_status @default(active)
+  created_at DateTime       @default(now()) @db.Timestamp(0)
+  userID     BigInt         @db.UnsignedBigInt
+  agent      agent[]
+  dataset    dataset[]
+  user       user           @relation(fields: [userID], references: [userID], map: "project_ibfk_1")
+
+  @@index([userID], map: "userID")
+}
+
+model run {
+  RunID        BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  Status       run_Status    @default(queued)
+  time         DateTime      @default(now()) @db.Timestamp(0)
+  notes        String?       @db.Text
+  Parent_RunID BigInt?       @db.UnsignedBigInt
+  AgentID      BigInt        @db.UnsignedBigInt
+  artifact     artifact[]
+  environment  environment[]
+  agent        agent         @relation(fields: [AgentID], references: [AgentID], onDelete: Cascade, map: "run_ibfk_1")
+  run          run?          @relation("runTorun", fields: [Parent_RunID], references: [RunID], map: "run_ibfk_2")
+  other_run    run[]         @relation("runTorun")
+  runmetric    runmetric[]
+  runstep      runstep[]
+
+  @@index([AgentID], map: "AgentID")
+  @@index([Parent_RunID], map: "Parent_RunID")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model runmetric {
+  ID            BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  RunID         BigInt             @db.UnsignedBigInt
+  Name          String             @db.VarChar(200)
+  Value_Text    String?            @db.VarChar(1000)
+  DataType      runmetric_DataType @default(text)
+  Value_Numeric Float?
+  run           run                @relation(fields: [RunID], references: [RunID], onDelete: Cascade, map: "runmetric_ibfk_1")
+
+  @@index([RunID], map: "RunID")
+}
+
+model runstep {
+  RunID     BigInt             @db.UnsignedBigInt
+  Step_No   Int
+  Name      String?            @db.VarChar(200)
+  Status    runstep_Status?    @default(pending)
+  Step_Type runstep_Step_Type?
+  Time      DateTime           @default(now()) @db.DateTime(0)
+  run       run                @relation(fields: [RunID], references: [RunID], onDelete: Cascade, map: "runstep_ibfk_1")
+
+  @@id([RunID, Step_No])
+}
+
+model user {
+  userID    BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  Fname     String    @db.VarChar(100)
+  Lname     String    @db.VarChar(100)
+  Email     String    @unique(map: "uq_user_email") @db.VarChar(255)
+  CreatedAt DateTime  @default(now()) @db.Timestamp(0)
+  project   project[]
+}
+
+enum run_Status {
+  queued
+  running
+  succeeded
+  failed
+  canceled
+}
+
+enum artifact_Type {
+  file
+  log
+  image
+  model
+  report
+}
+
+enum project_status {
+  active
+  archived
+}
+
+enum runstep_Status {
+  pending
+  ok
+  error
+}
+
+enum runmetric_DataType {
+  numeric
+  text
+  boolean
+  json
+  other
+}
+
+enum dataset_type {
+  text
+  image
+  tabular
+  logs
+  audio
+  video
+}
+
+enum runstep_Step_Type {
+  plan
+  tool_call
+  observe
+  revise
+  finalize
+}
