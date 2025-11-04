@@ -1,9 +1,11 @@
 "use client"
 import React from 'react'
 import { motion } from 'framer-motion'
+import { useAuth } from '../contexts/AuthContext'
 const MotionTr: any = (motion as any).tr
 
 export default function TableView({ table, data, onEdit, onDelete }: any) {
+  const { isAdmin } = useAuth()
   return (
     <div className="bg-white rounded-lg shadow p-4 md:p-6 w-full">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
@@ -49,20 +51,24 @@ export default function TableView({ table, data, onEdit, onDelete }: any) {
                     )
                   })}
                   <td className="px-3 md:px-4 py-3 align-top whitespace-nowrap">
-                    <div className="flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => onEdit(row)}
-                        className="text-sm px-2 py-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => onDelete(row)}
-                        className="text-sm px-2 py-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                    {isAdmin() ? (
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={() => onEdit(row)}
+                          className="text-sm px-2 py-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => onDelete(row)}
+                          className="text-sm px-2 py-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400 italic">View only</span>
+                    )}
                   </td>
                 </MotionTr>
               )) : (

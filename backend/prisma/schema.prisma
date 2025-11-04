@@ -119,6 +119,8 @@ model user {
   Fname     String    @db.VarChar(100)
   Lname     String    @db.VarChar(100)
   Email     String    @unique(map: "uq_user_email") @db.VarChar(255)
+  Password  String    @db.VarChar(255)
+  Role      user_Role @default(user)
   CreatedAt DateTime  @default(now()) @db.Timestamp(0)
   project   project[]
 }
@@ -173,4 +175,9 @@ enum runstep_Step_Type {
   observe
   revise
   finalize
+}
+
+enum user_Role {
+  user
+  admin
 }

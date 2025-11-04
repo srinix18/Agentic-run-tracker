@@ -2,6 +2,7 @@
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useAuth } from '../../../contexts/AuthContext'
 import { useTable } from '../../../hooks/useTable'
 import TableView from '../../../components/TableView'
 import RecordModal from '../../../components/RecordModal'
@@ -13,6 +14,7 @@ const queryClient = new QueryClient()
 
 function TablePageContent({ params }: any) {
   const table = params.table
+  const { isAdmin } = useAuth()
   const [page, setPage] = useState(1)
   const { query, create, update, remove } = useTable(table, page, 20)
   const [selected, setSelected] = useState<any>(null)
@@ -137,19 +139,25 @@ function TablePageContent({ params }: any) {
           </p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          <button
-            onClick={() => {
-              // Create empty form with all field names from the schema
-              const emptyForm = query.data?.data?.[0]
-                ? Object.keys(query.data.data[0]).reduce((acc: any, key) => ({ ...acc, [key]: '' }), {})
-                : {}
-              setSelected(emptyForm); // Set to empty form, not null
-              setOpen(true)
-            }}
-            className="flex-1 sm:flex-initial px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-          >
-            + New Record
-          </button>
+          {isAdmin() ? (
+            <button
+              onClick={() => {
+                // Create empty form with all field names from the schema
+                const emptyForm = query.data?.data?.[0]
+                  ? Object.keys(query.data.data[0]).reduce((acc: any, key) => ({ ...acc, [key]: '' }), {})
+                  : {}
+                setSelected(emptyForm); // Set to empty form, not null
+                setOpen(true)
+              }}
+              className="flex-1 sm:flex-initial px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+            >
+              + New Record
+            </button>
+          ) : (
+            <div className="flex-1 sm:flex-initial px-4 py-2 bg-gray-200 text-gray-500 rounded-lg cursor-not-allowed font-medium text-center">
+              🔒 View Only (Admin access required)
+            </div>
+          )}
         </div>
       </div>
       {query.isLoading ? (

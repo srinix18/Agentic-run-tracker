@@ -1,16 +1,23 @@
 "use client"
 import React, { useState } from 'react'
+import { usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
 import { Toaster } from 'sonner'
 import { Menu, X } from 'lucide-react'
 
 export default function ClientShell() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const pathname = usePathname()
+
+  // Don't show sidebar on login page
+  if (pathname === '/login') {
+    return <Toaster position="top-right" />
+  }
 
   return (
     <>
       <Toaster position="top-right" />
-      
+
       {/* Mobile menu button */}
       <button
         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -40,7 +47,7 @@ export default function ClientShell() {
         z-40
         transition-transform duration-300 ease-in-out
         overflow-y-auto
-      `}> 
+      `}>
         <Sidebar onNavigate={() => setMobileMenuOpen(false)} />
       </aside>
     </>

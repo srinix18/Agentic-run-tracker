@@ -2,6 +2,7 @@
 
 export default function TriggersPage() {
     const triggers = [
+        // INSERT TRIGGERS
         {
             name: 'trg_run_parent_not_self',
             type: 'BEFORE INSERT',
@@ -35,6 +36,241 @@ BEGIN
   END IF; 
 END;`,
             example: 'INSERT INTO Artifact (Type, URI, RunID) VALUES ("log", "https://example.com/log.txt", 1); -- Checksum auto-generated'
+        },
+        {
+            name: 'trg_project_validate_status',
+            type: 'BEFORE INSERT',
+            table: 'Project',
+            description: 'Validates project status before insertion. Ensures that only valid status values (active, archived) are inserted into the project table.',
+            timing: 'BEFORE INSERT',
+            event: 'INSERT',
+            definition: `CREATE TRIGGER trg_project_validate_status 
+BEFORE INSERT ON \`Project\` 
+FOR EACH ROW 
+BEGIN 
+  IF NEW.status NOT IN ('active', 'archived') THEN 
+    SIGNAL SQLSTATE '45000' 
+    SET MESSAGE_TEXT = 'Invalid project status. Must be active or archived'; 
+  END IF; 
+END;`,
+            example: 'INSERT INTO Project (name, status, userID) VALUES ("Test Project", "active", 1); -- Valid\nINSERT INTO Project (name, status, userID) VALUES ("Test", "invalid", 1); -- This will fail'
+        },
+        {
+            name: 'trg_user_email_validation',
+            type: 'BEFORE INSERT',
+            table: 'User',
+            description: 'Validates email format before inserting a new user. Checks that the email contains an @ symbol and a domain extension.',
+            timing: 'BEFORE INSERT',
+            event: 'INSERT',
+            definition: `CREATE TRIGGER trg_user_email_validation 
+BEFORE INSERT ON \`User\` 
+FOR EACH ROW 
+BEGIN 
+  IF NEW.Email NOT LIKE '%_@__%.__%' THEN 
+    SIGNAL SQLSTATE '45000' 
+    SET MESSAGE_TEXT = 'Invalid email format'; 
+  END IF; 
+END;`,
+            example: 'INSERT INTO User (Fname, Lname, Email, Password, Role) VALUES ("John", "Doe", "john@example.com", "pass", "user"); -- Valid\nINSERT INTO User (Fname, Lname, Email, Password, Role) VALUES ("Jane", "Doe", "invalid-email", "pass", "user"); -- This will fail'
+        },
+
+        // UPDATE TRIGGERS
+        {
+            name: 'trg_run_status_update_validation',
+            type: 'BEFORE UPDATE',
+            table: 'Run',
+            description: 'Validates run status transitions during updates. Prevents invalid status changes (e.g., cannot go from "succeeded" to "queued"). Ensures logical workflow progression.',
+            timing: 'BEFORE UPDATE',
+            event: 'UPDATE',
+            definition: `CREATE TRIGGER trg_run_status_update_validation 
+BEFORE UPDATE ON \`Run\` 
+FOR EACH ROW 
+BEGIN 
+  -- Prevent changing from terminal states to non-terminal states
+  IF OLD.Status IN ('succeeded', 'failed', 'canceled') 
+     AND NEW.Status IN ('queued', 'running') THEN 
+    SIGNAL SQLSTATE '45000' 
+    SET MESSAGE_TEXT = 'Cannot restart a terminated run'; 
+  END IF; 
+END;`,
+            example: 'UPDATE Run SET Status = "running" WHERE RunID = 1; -- Valid if current status allows\nUPDATE Run SET Status = "queued" WHERE RunID = 2 AND Status = "succeeded"; -- This will fail'
+        },
+        {
+            name: 'trg_artifact_checksum_update',
+            type: 'BEFORE UPDATE',
+            table: 'Artifact',
+            description: 'Regenerates checksum when artifact URI is updated. Automatically recalculates SHA-256 hash if the URI changes to maintain data integrity.',
+            timing: 'BEFORE UPDATE',
+            event: 'UPDATE',
+            definition: `CREATE TRIGGER trg_artifact_checksum_update 
+BEFORE UPDATE ON \`Artifact\` 
+FOR EACH ROW 
+BEGIN 
+  IF NEW.URI != OLD.URI THEN 
+    SET NEW.Checksum = SHA2(NEW.URI, 256); 
+  END IF; 
+END;`,
+            example: 'UPDATE Artifact SET URI = "https://example.com/new-log.txt" WHERE ArtifactID = 1; -- Checksum auto-regenerated'
+        },
+        {
+            name: 'trg_project_status_change_audit',
+            type: 'AFTER UPDATE',
+            table: 'Project',
+            description: 'Logs project status changes for auditing purposes. Creates an audit trail whenever a project status is updated from active to archived or vice versa.',
+            timing: 'AFTER UPDATE',
+            event: 'UPDATE',
+            definition: `CREATE TRIGGER trg_project_status_change_audit 
+AFTER UPDATE ON \`Project\` 
+FOR EACH ROW 
+BEGIN 
+  IF OLD.status != NEW.status THEN 
+    INSERT INTO project_audit_log (ProjectID, old_status, new_status, changed_at) 
+    VALUES (NEW.ProjectID, OLD.status, NEW.status, NOW()); 
+  END IF; 
+END;`,
+            example: 'UPDATE Project SET status = "archived" WHERE ProjectID = 1; -- Logs the status change to audit table'
+        },
+        {
+            name: 'trg_user_prevent_role_downgrade',
+            type: 'BEFORE UPDATE',
+            table: 'User',
+            description: 'Prevents downgrading the last admin user to regular user. Ensures at least one admin user exists in the system at all times for system management.',
+            timing: 'BEFORE UPDATE',
+            event: 'UPDATE',
+            definition: `CREATE TRIGGER trg_user_prevent_role_downgrade 
+BEFORE UPDATE ON \`User\` 
+FOR EACH ROW 
+BEGIN 
+  DECLARE admin_count INT; 
+  IF OLD.Role = 'admin' AND NEW.Role = 'user' THEN 
+    SELECT COUNT(*) INTO admin_count FROM User WHERE Role = 'admin'; 
+    IF admin_count <= 1 THEN 
+      SIGNAL SQLSTATE '45000' 
+      SET MESSAGE_TEXT = 'Cannot remove the last admin user'; 
+    END IF; 
+  END IF; 
+END;`,
+            example: 'UPDATE User SET Role = "user" WHERE userID = 1 AND Role = "admin"; -- Will fail if this is the last admin'
+        },
+        {
+            name: 'trg_runmetric_validate_numeric',
+            type: 'BEFORE UPDATE',
+            table: 'RunMetric',
+            description: 'Validates that numeric metrics have valid numeric values. Ensures data type consistency when updating metric values based on the DataType field.',
+            timing: 'BEFORE UPDATE',
+            event: 'UPDATE',
+            definition: `CREATE TRIGGER trg_runmetric_validate_numeric 
+BEFORE UPDATE ON \`RunMetric\` 
+FOR EACH ROW 
+BEGIN 
+  IF NEW.DataType = 'numeric' AND NEW.Value_Numeric IS NULL THEN 
+    SIGNAL SQLSTATE '45000' 
+    SET MESSAGE_TEXT = 'Numeric metrics must have a Value_Numeric'; 
+  END IF; 
+END;`,
+            example: 'UPDATE RunMetric SET Value_Numeric = 95.5 WHERE ID = 1; -- Valid\nUPDATE RunMetric SET Value_Numeric = NULL WHERE ID = 2 AND DataType = "numeric"; -- This will fail'
+        },
+
+        // DELETE TRIGGERS
+        {
+            name: 'trg_user_prevent_last_admin_delete',
+            type: 'BEFORE DELETE',
+            table: 'User',
+            description: 'Prevents deletion of the last admin user in the system. Ensures system manageability by maintaining at least one admin user at all times.',
+            timing: 'BEFORE DELETE',
+            event: 'DELETE',
+            definition: `CREATE TRIGGER trg_user_prevent_last_admin_delete 
+BEFORE DELETE ON \`User\` 
+FOR EACH ROW 
+BEGIN 
+  DECLARE admin_count INT; 
+  IF OLD.Role = 'admin' THEN 
+    SELECT COUNT(*) INTO admin_count FROM User WHERE Role = 'admin'; 
+    IF admin_count <= 1 THEN 
+      SIGNAL SQLSTATE '45000' 
+      SET MESSAGE_TEXT = 'Cannot delete the last admin user'; 
+    END IF; 
+  END IF; 
+END;`,
+            example: 'DELETE FROM User WHERE userID = 1 AND Role = "admin"; -- Will fail if this is the last admin user'
+        },
+        {
+            name: 'trg_project_cascade_cleanup',
+            type: 'BEFORE DELETE',
+            table: 'Project',
+            description: 'Archives project instead of deleting. Changes project status to "archived" rather than permanently deleting, preserving historical data for auditing.',
+            timing: 'BEFORE DELETE',
+            event: 'DELETE',
+            definition: `CREATE TRIGGER trg_project_cascade_cleanup 
+BEFORE DELETE ON \`Project\` 
+FOR EACH ROW 
+BEGIN 
+  -- Instead of deleting, archive the project
+  UPDATE Project SET status = 'archived' WHERE ProjectID = OLD.ProjectID; 
+  SIGNAL SQLSTATE '45000' 
+  SET MESSAGE_TEXT = 'Project archived instead of deleted'; 
+END;`,
+            example: 'DELETE FROM Project WHERE ProjectID = 1; -- Project will be archived instead of deleted'
+        },
+        {
+            name: 'trg_run_delete_orphan_prevention',
+            type: 'BEFORE DELETE',
+            table: 'Run',
+            description: 'Prevents deletion of runs that have child runs. Ensures data integrity by checking if any other runs reference this run as their parent before allowing deletion.',
+            timing: 'BEFORE DELETE',
+            event: 'DELETE',
+            definition: `CREATE TRIGGER trg_run_delete_orphan_prevention 
+BEFORE DELETE ON \`Run\` 
+FOR EACH ROW 
+BEGIN 
+  DECLARE child_count INT; 
+  SELECT COUNT(*) INTO child_count 
+  FROM Run WHERE Parent_RunID = OLD.RunID; 
+  IF child_count > 0 THEN 
+    SIGNAL SQLSTATE '45000' 
+    SET MESSAGE_TEXT = 'Cannot delete run with child runs'; 
+  END IF; 
+END;`,
+            example: 'DELETE FROM Run WHERE RunID = 1; -- Will fail if other runs have Parent_RunID = 1'
+        },
+        {
+            name: 'trg_agent_active_runs_check',
+            type: 'BEFORE DELETE',
+            table: 'Agent',
+            description: 'Prevents deletion of agents with active runs. Checks for any runs in "running" or "queued" status before allowing agent deletion to prevent orphaned active processes.',
+            timing: 'BEFORE DELETE',
+            event: 'DELETE',
+            definition: `CREATE TRIGGER trg_agent_active_runs_check 
+BEFORE DELETE ON \`Agent\` 
+FOR EACH ROW 
+BEGIN 
+  DECLARE active_runs INT; 
+  SELECT COUNT(*) INTO active_runs 
+  FROM Run 
+  WHERE AgentID = OLD.AgentID 
+    AND Status IN ('running', 'queued'); 
+  IF active_runs > 0 THEN 
+    SIGNAL SQLSTATE '45000' 
+    SET MESSAGE_TEXT = 'Cannot delete agent with active runs'; 
+  END IF; 
+END;`,
+            example: 'DELETE FROM Agent WHERE AgentID = 1; -- Will fail if there are active runs for this agent'
+        },
+        {
+            name: 'trg_artifact_cleanup_notification',
+            type: 'AFTER DELETE',
+            table: 'Artifact',
+            description: 'Logs artifact deletion for cleanup tasks. Creates a notification or log entry when artifacts are deleted, useful for external storage cleanup or audit trails.',
+            timing: 'AFTER DELETE',
+            event: 'DELETE',
+            definition: `CREATE TRIGGER trg_artifact_cleanup_notification 
+AFTER DELETE ON \`Artifact\` 
+FOR EACH ROW 
+BEGIN 
+  INSERT INTO artifact_deletion_log (ArtifactID, URI, Type, deleted_at) 
+  VALUES (OLD.ArtifactID, OLD.URI, OLD.Type, NOW()); 
+END;`,
+            example: 'DELETE FROM Artifact WHERE ArtifactID = 1; -- Logs deletion for external cleanup processes'
         }
     ]
 

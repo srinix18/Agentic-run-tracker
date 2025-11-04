@@ -7,6 +7,32 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
 
 /**
+ * Get common headers including user role for role-based database access
+ */
+function getHeaders(): HeadersInit {
+    const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+    }
+
+    // Get user from localStorage
+    if (typeof window !== 'undefined') {
+        const userStr = localStorage.getItem('user')
+        if (userStr) {
+            try {
+                const user = JSON.parse(userStr)
+                if (user && user.role) {
+                    headers['x-user-role'] = user.role
+                }
+            } catch (e) {
+                console.error('Error parsing user from localStorage:', e)
+            }
+        }
+    }
+
+    return headers
+}
+
+/**
  * List all available tables in the database
  */
 export async function listTables(): Promise<string[]> {
@@ -28,7 +54,10 @@ export async function fetchTable(
     limit: number = 20
 ): Promise<{ data: any[]; meta: { total: number; page: number; limit: number } }> {
     const response = await fetch(
-        `${API_BASE_URL}/api/${table}?page=${page}&limit=${limit}`
+        `${API_BASE_URL}/api/${table}?page=${page}&limit=${limit}`,
+        {
+            headers: getHeaders()
+        }
     )
     if (!response.ok) {
         throw new Error(`Failed to fetch ${table}: ${response.statusText}`)
@@ -98,7 +127,7 @@ export async function createRow(
     try {
         const response = await fetch(`${API_BASE_URL}/api/${table}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getHeaders(),
             body: JSON.stringify(data),
         })
         const result = await response.json()
@@ -123,7 +152,7 @@ export async function updateRow(
     try {
         const response = await fetch(`${API_BASE_URL}/api/${table}/${id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getHeaders(),
             body: JSON.stringify(data),
         })
         const result = await response.json()
@@ -147,6 +176,7 @@ export async function deleteRow(
     try {
         const response = await fetch(`${API_BASE_URL}/api/${table}/${id}`, {
             method: 'DELETE',
+            headers: getHeaders(),
         })
         if (!response.ok) {
             const result = await response.json()

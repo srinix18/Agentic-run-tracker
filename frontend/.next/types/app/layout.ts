@@ -1,4 +1,4 @@
-// File: /Users/kireetireddyp/Desktop/Semester 5/DBMS/Agentic AI/Agentic-run-tracker/frontend/app/layout.tsx
+// File: /Users/kireetireddyp/Desktop/Semester 5/DBMS/Agentic AI/Agentic-run-tracker 2/frontend/app/layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

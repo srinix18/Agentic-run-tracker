@@ -1,6 +1,7 @@
 "use client"
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { useAuth } from '../contexts/AuthContext'
 const MotionDiv: any = (motion as any).div
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
@@ -8,6 +9,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
 export default function RecordModal({ open, onClose, onSave, initial, table }: any) {
   const [form, setForm] = useState<any>({})
   const [schema, setSchema] = useState<any[]>([])
+  const { isAdmin } = useAuth()
 
   useEffect(() => {
     setForm(initial || {})
@@ -53,6 +55,34 @@ export default function RecordModal({ open, onClose, onSave, initial, table }: a
   const isEditing = firstValue && String(firstValue).trim() !== ''
 
   if (!open) return null
+
+  // If user is not admin, show a message instead of the form
+  if (!isAdmin()) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="absolute inset-0 bg-black/40" onClick={onClose}></div>
+        <MotionDiv
+          layout
+          initial={{ scale: 0.98, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="relative z-10 w-full max-w-md bg-white rounded-lg p-6 shadow-lg my-8 text-center"
+        >
+          <div className="text-6xl mb-4">🔒</div>
+          <h3 className="text-xl font-medium mb-2">Access Restricted</h3>
+          <p className="text-gray-600 mb-6">
+            Only administrators can create or edit records. Please contact your admin for assistance.
+          </p>
+          <button
+            onClick={onClose}
+            className="px-6 py-2 rounded-md bg-gray-600 text-white hover:bg-gray-700 transition-colors"
+          >
+            Close
+          </button>
+        </MotionDiv>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
       <div className="absolute inset-0 bg-black/40" onClick={onClose}></div>

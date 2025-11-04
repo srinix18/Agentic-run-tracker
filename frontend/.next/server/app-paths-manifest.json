@@ -1,7 +1,9 @@
 {
-  "/page": "app/page.js",
-  "/tables/page": "app/tables/page.js",
-  "/settings/page": "app/settings/page.js",
+  "/query-builder/page": "app/query-builder/page.js",
+  "/tables/[table]/page": "app/tables/[table]/page.js",
   "/functions/page": "app/functions/page.js",
-  "/sql-query/page": "app/sql-query/page.js"
+  "/login/page": "app/login/page.js",
+  "/tables/page": "app/tables/page.js",
+  "/triggers/page": "app/triggers/page.js",
+  "/page": "app/page.js"
 }

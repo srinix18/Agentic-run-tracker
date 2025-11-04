@@ -22,7 +22,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import bodyParser from 'body-parser';
-import { prisma } from './db';
+import { prisma, getPrismaClient } from './db';
 
 dotenv.config({ path: __dirname + '/../../.env' });
 
@@ -32,8 +32,30 @@ const app = express();
 // provider).
 const port = process.env.PORT || 4000;
 
+// Extend Express Request type to include userRole and dbClient
+declare global {
+  namespace Express {
+    interface Request {
+      userRole?: 'admin' | 'user';
+      dbClient?: any;
+    }
+  }
+}
+
 app.use(cors());
 app.use(bodyParser.json());
+
+// Middleware: Extract user role from request headers and attach appropriate DB client
+app.use((req: any, res: any, next: any) => {
+  // Extract user role from custom header (set by frontend after login)
+  const userRole = req.headers['x-user-role'] as 'admin' | 'user' || 'user';
+  req.userRole = userRole;
+
+  // Attach appropriate Prisma client based on role
+  req.dbClient = getPrismaClient(userRole);
+
+  next();
+});
 
 // Middleware: sanitize responses by converting BigInt and Date values to strings so
 // express/res.json doesn't throw when serializing mocked or real DB rows.
@@ -114,7 +136,7 @@ function validateTable(table: string) {
 }
 
 // GET /api/:table  -> list, with pagination query ?page=1&limit=20
-app.get('/api/:table', async (req: Request, res: Response) => {
+app.get('/api/:table', async (req: any, res: Response) => {
   const table = req.params.table;
   const page = Math.max(1, parseInt((req.query.page as string) || '1'));
   const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || '20')));
@@ -122,8 +144,10 @@ app.get('/api/:table', async (req: Request, res: Response) => {
   const offset = (page - 1) * limit;
   try {
     const map = modelMap[table];
-    const data = await (prisma as any)[map.name].findMany({ skip: offset, take: limit });
-    const total = await (prisma as any)[map.name].count();
+    // Use role-based database client
+    const db = req.dbClient || prisma;
+    const data = await (db as any)[map.name].findMany({ skip: offset, take: limit });
+    const total = await (db as any)[map.name].count();
     res.json({ data, meta: { page, limit, total } });
   } catch (err) {
     console.error(err);
@@ -132,13 +156,21 @@ app.get('/api/:table', async (req: Request, res: Response) => {
 });
 
 // POST /api/:table -> create (body is object of column -> value)
-app.post('/api/:table', async (req: Request, res: Response) => {
+app.post('/api/:table', async (req: any, res: Response) => {
   const table = req.params.table;
   const payload = req.body;
   if (!validateTable(table)) return res.status(400).json({ error: 'Unknown table' });
+
+  // Check if user has admin privileges for write operations
+  if (req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: Admin privileges required for this operation' });
+  }
+
   try {
     const map = modelMap[table];
-    const created = await (prisma as any)[map.name].create({ data: payload });
+    // Use role-based database client
+    const db = req.dbClient || prisma;
+    const created = await (db as any)[map.name].create({ data: payload });
     res.json({ ok: true, data: created });
   } catch (err: any) {
     console.error(err);
@@ -147,22 +179,24 @@ app.post('/api/:table', async (req: Request, res: Response) => {
 });
 
 // GET /api/:table/:id -> fetch by PK
-app.get('/api/:table/:id', async (req: Request, res: Response) => {
+app.get('/api/:table/:id', async (req: any, res: Response) => {
   const table = req.params.table;
   const id = req.params.id;
   if (!validateTable(table)) return res.status(400).json({ error: 'Unknown table' });
   try {
     const map = modelMap[table];
+    // Use role-based database client
+    const db = req.dbClient || prisma;
     // handle composite PK for runstep where id will be 'RunID-Step_No'
     if (Array.isArray(map.pk)) {
       const [runId, stepNo] = id.split('-');
-      const row = await (prisma as any)[map.name].findUnique({ where: { RunID_Step_No: { RunID: BigInt(runId), Step_No: parseInt(stepNo) } } });
+      const row = await (db as any)[map.name].findUnique({ where: { RunID_Step_No: { RunID: BigInt(runId), Step_No: parseInt(stepNo) } } });
       return res.json({ data: row || null });
     }
     const where: any = {};
     // prisma BigInt fields expect JS BigInt or string depending on client config
     where[map.pk] = id;
-    const row = await (prisma as any)[map.name].findUnique({ where });
+    const row = await (db as any)[map.name].findUnique({ where });
     res.json({ data: row || null });
   } catch (err) {
     console.error(err);
@@ -171,21 +205,29 @@ app.get('/api/:table/:id', async (req: Request, res: Response) => {
 });
 
 // PUT /api/:table/:id -> update by PK
-app.put('/api/:table/:id', async (req: Request, res: Response) => {
+app.put('/api/:table/:id', async (req: any, res: Response) => {
   const table = req.params.table;
   const id = req.params.id;
   const payload = req.body;
   if (!validateTable(table)) return res.status(400).json({ error: 'Unknown table' });
+
+  // Check if user has admin privileges for write operations
+  if (req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: Admin privileges required for this operation' });
+  }
+
   try {
     const map = modelMap[table];
+    // Use role-based database client
+    const db = req.dbClient || prisma;
     if (Array.isArray(map.pk)) {
       const [runId, stepNo] = id.split('-');
-      const updated = await (prisma as any)[map.name].update({ where: { RunID_Step_No: { RunID: BigInt(runId), Step_No: parseInt(stepNo) } }, data: payload });
+      const updated = await (db as any)[map.name].update({ where: { RunID_Step_No: { RunID: BigInt(runId), Step_No: parseInt(stepNo) } }, data: payload });
       return res.json({ ok: true, data: updated });
     }
     const where: any = {};
     where[map.pk] = id;
-    const updated = await (prisma as any)[map.name].update({ where, data: payload });
+    const updated = await (db as any)[map.name].update({ where, data: payload });
     res.json({ ok: true, data: updated });
   } catch (err: any) {
     console.error(err);
@@ -194,20 +236,28 @@ app.put('/api/:table/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/:table/:id -> delete by PK
-app.delete('/api/:table/:id', async (req: Request, res: Response) => {
+app.delete('/api/:table/:id', async (req: any, res: Response) => {
   const table = req.params.table;
   const id = req.params.id;
   if (!validateTable(table)) return res.status(400).json({ error: 'Unknown table' });
+
+  // Check if user has admin privileges for write operations
+  if (req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: Admin privileges required for this operation' });
+  }
+
   try {
     const map = modelMap[table];
+    // Use role-based database client
+    const db = req.dbClient || prisma;
     if (Array.isArray(map.pk)) {
       const [runId, stepNo] = id.split('-');
-      const deleted = await (prisma as any)[map.name].delete({ where: { RunID_Step_No: { RunID: BigInt(runId), Step_No: parseInt(stepNo) } } });
+      const deleted = await (db as any)[map.name].delete({ where: { RunID_Step_No: { RunID: BigInt(runId), Step_No: parseInt(stepNo) } } });
       return res.json({ ok: true, data: deleted });
     }
     const where: any = {};
     where[map.pk] = id;
-    const deleted = await (prisma as any)[map.name].delete({ where });
+    const deleted = await (db as any)[map.name].delete({ where });
     res.json({ ok: true, data: deleted });
   } catch (err) {
     console.error(err);
@@ -216,7 +266,7 @@ app.delete('/api/:table/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/query/execute -> execute custom SQL query
-app.post('/api/query/execute', async (req: Request, res: Response) => {
+app.post('/api/query/execute', async (req: any, res: Response) => {
   const { query } = req.body;
   if (!query || typeof query !== 'string') {
     return res.status(400).json({ error: 'Query string is required' });
@@ -233,9 +283,12 @@ app.post('/api/query/execute', async (req: Request, res: Response) => {
     const isSelect = /^\s*SELECT/i.test(trimmedQuery);
     const isCall = /^\s*CALL/i.test(trimmedQuery);
 
+    // Use role-based database client
+    const db = req.dbClient || prisma;
+
     if (isSelect || isCall) {
-      // For SELECT and CALL, return results
-      const results = await prisma.$queryRawUnsafe(trimmedQuery);
+      // For SELECT and CALL, return results (both admin and user can read)
+      const results = await db.$queryRawUnsafe(trimmedQuery);
       res.json({
         ok: true,
         data: results,
@@ -244,7 +297,12 @@ app.post('/api/query/execute', async (req: Request, res: Response) => {
       });
     } else {
       // For other queries (INSERT, UPDATE, DELETE, etc.)
-      const result = await prisma.$executeRawUnsafe(trimmedQuery);
+      // Check if user has admin privileges
+      if (req.userRole !== 'admin') {
+        return res.status(403).json({ error: 'Forbidden: Admin privileges required for write operations' });
+      }
+
+      const result = await db.$executeRawUnsafe(trimmedQuery);
       res.json({
         ok: true,
         affectedRows: result,
@@ -257,6 +315,81 @@ app.post('/api/query/execute', async (req: Request, res: Response) => {
       error: err.message || 'Failed to execute query',
       details: err.code || 'Unknown error'
     });
+  }
+});
+
+// Authentication endpoints
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  try {
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { Email: email }
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Simple password check (in production, use bcrypt)
+    if (user.Password !== password) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Return user info (exclude password)
+    res.json({
+      ok: true,
+      user: {
+        userID: user.userID.toString(),
+        fname: user.Fname,
+        lname: user.Lname,
+        email: user.Email,
+        role: user.Role,
+        createdAt: user.CreatedAt
+      }
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Get current user info (for session validation)
+app.post('/api/auth/me', async (req: Request, res: Response) => {
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { userID: BigInt(userId) }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      ok: true,
+      user: {
+        userID: user.userID.toString(),
+        fname: user.Fname,
+        lname: user.Lname,
+        email: user.Email,
+        role: user.Role,
+        createdAt: user.CreatedAt
+      }
+    });
+  } catch (err) {
+    console.error('Auth check error:', err);
+    res.status(500).json({ error: 'Failed to get user info' });
   }
 });
 
